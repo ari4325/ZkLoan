@@ -1,0 +1,45 @@
+{
+  "name": "ZkLoan",
+  "version": "1.0.0",
+  "license": "UNLICENSED",
+  "scripts": {
+    "build": "cd contract && npm i && npm run build && mkdir -p ../out && cp ./build/contract.wasm ../out/main.wasm",
+    "deploy": "npm run build && near dev-deploy && export $(cat ./neardev/dev-account.env) && near call $CONTRACT_NAME init --accountId $CONTRACT_NAME --deposit 1",
+    "start": "npm run deploy && echo The app is starting! && env-cmd -f ./neardev/dev-account.env parcel frontend/index.html --open",
+    "dev": "nodemon --watch contract -e ts --exec \"npm run start\"",
+    "test": "npm run build && npm run test:unit && npm run test:integration",
+    "test:unit": "echo js has no unit tests",
+    "test:integration": "npm run test:integration:ts && npm run test:integration:rs",
+    "test:integration:ts": "ava --verbose",
+    "test:integration:rs": "cd integration-tests/rs && cargo run --example integration-tests"
+  },
+  "devDependencies": {
+    "assert": "^2.0.0",
+    "ava": "^4.2.0",
+    "browserify-zlib": "^0.2.0",
+    "buffer": "^6.0.3",
+    "constants-browserify": "^1.0.0",
+    "crypto-browserify": "^3.12.0",
+    "env-cmd": "^10.1.0",
+    "https-browserify": "^1.0.0",
+    "near-cli": "^3.4.2",
+    "near-workspaces": "^3.1.0",
+    "nodemon": "~2.0.15",
+    "os-browserify": "^0.3.0",
+    "path-browserify": "^1.0.1",
+    "process": "^0.11.10",
+    "querystring-es3": "^0.2.1",
+    "stream-browserify": "^3.0.0",
+    "stream-http": "^3.2.0",
+    "ts-node": "^10.7.0",
+    "typescript": "^4.7.4",
+    "url": "^0.11.0",
+    "util": "^0.12.4"
+  },
+  "dependencies": {
+    "big.js": "^6.2.1",
+    "near-api-js": "~0.43.1",
+    "parcel": "^2.7.0",
+    "regenerator-runtime": "~0.13.5"
+  }
+}

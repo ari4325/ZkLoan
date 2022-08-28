@@ -1,0 +1,5 @@
+DEFINE_NEAR_METHOD(createTree)
+DEFINE_NEAR_METHOD(createWitness)
+DEFINE_NEAR_METHOD(getProof)
+DEFINE_NEAR_METHOD(init)
+DEFINE_NEAR_METHOD(verifyProofAndUpdate)
