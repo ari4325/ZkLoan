@@ -27,6 +27,7 @@ function _applyDecoratedDescriptor(target, property, decorators, descriptor, con
   return desc;
 }
 
+function call(target, key, descriptor) {}
 function view(target, key, descriptor) {}
 function NearBindgen(target) {
   return class extends target {
@@ -143,9 +144,20 @@ function u8ArrayToBytes(array) {
 
   return ret;
 } // TODO this function is a bit broken and the type can't be string
+// TODO for more info: https://github.com/near/near-sdk-js/issues/78
+
+function bytesToU8Array(bytes) {
+  let ret = new Uint8Array(bytes.length);
+
+  for (let i = 0; i < bytes.length; i++) {
+    ret[i] = bytes.charCodeAt(i);
+  }
+
+  return ret;
+}
 
 const ERR_INDEX_OUT_OF_BOUNDS = "Index out of bounds";
-const ERR_INCONSISTENT_STATE = "The collection is an inconsistent state. Did previous smart contract execution terminate unexpectedly?";
+const ERR_INCONSISTENT_STATE$1 = "The collection is an inconsistent state. Did previous smart contract execution terminate unexpectedly?";
 
 function indexToKey(prefix, index) {
   let data = new Uint32Array([index]);
@@ -194,7 +206,7 @@ class Vector {
       if (storageWrite(key, JSON.stringify(last))) {
         return JSON.parse(storageGetEvicted());
       } else {
-        throw new Error(ERR_INCONSISTENT_STATE);
+        throw new Error(ERR_INCONSISTENT_STATE$1);
       }
     }
   }
@@ -216,7 +228,7 @@ class Vector {
       if (storageRemove(lastKey)) {
         return JSON.parse(storageGetEvicted());
       } else {
-        throw new Error(ERR_INCONSISTENT_STATE);
+        throw new Error(ERR_INCONSISTENT_STATE$1);
       }
     }
   }
@@ -230,7 +242,7 @@ class Vector {
       if (storageWrite(key, JSON.stringify(element))) {
         return JSON.parse(storageGetEvicted());
       } else {
-        throw new Error(ERR_INCONSISTENT_STATE);
+        throw new Error(ERR_INCONSISTENT_STATE$1);
       }
     }
   }
@@ -300,6 +312,199 @@ class VectorIterator {
 
 }
 
+const ERR_INCONSISTENT_STATE = "The collection is an inconsistent state. Did previous smart contract execution terminate unexpectedly?";
+class UnorderedMap {
+  constructor(prefix) {
+    this.length = 0;
+    this.prefix = prefix;
+    this.keyIndexPrefix = prefix + "i";
+    let indexKey = prefix + "k";
+    let indexValue = prefix + "v";
+    this.keys = new Vector(indexKey);
+    this.values = new Vector(indexValue);
+  }
+
+  len() {
+    let keysLen = this.keys.len();
+    let valuesLen = this.values.len();
+
+    if (keysLen != valuesLen) {
+      throw new Error(ERR_INCONSISTENT_STATE);
+    }
+
+    return keysLen;
+  }
+
+  isEmpty() {
+    let keysIsEmpty = this.keys.isEmpty();
+    let valuesIsEmpty = this.values.isEmpty();
+
+    if (keysIsEmpty != valuesIsEmpty) {
+      throw new Error(ERR_INCONSISTENT_STATE);
+    }
+
+    return keysIsEmpty;
+  }
+
+  serializeIndex(index) {
+    let data = new Uint32Array([index]);
+    let array = new Uint8Array(data.buffer);
+    return u8ArrayToBytes(array);
+  }
+
+  deserializeIndex(rawIndex) {
+    let array = bytesToU8Array(rawIndex);
+    let data = new Uint32Array(array.buffer);
+    return data[0];
+  }
+
+  getIndexRaw(key) {
+    let indexLookup = this.keyIndexPrefix + JSON.stringify(key);
+    let indexRaw = storageRead(indexLookup);
+    return indexRaw;
+  }
+
+  get(key) {
+    let indexRaw = this.getIndexRaw(key);
+
+    if (indexRaw) {
+      let index = this.deserializeIndex(indexRaw);
+      let value = this.values.get(index);
+
+      if (value) {
+        return value;
+      } else {
+        throw new Error(ERR_INCONSISTENT_STATE);
+      }
+    }
+
+    return null;
+  }
+
+  set(key, value) {
+    let indexLookup = this.keyIndexPrefix + JSON.stringify(key);
+    let indexRaw = storageRead(indexLookup);
+
+    if (indexRaw) {
+      let index = this.deserializeIndex(indexRaw);
+      return this.values.replace(index, value);
+    } else {
+      let nextIndex = this.len();
+      let nextIndexRaw = this.serializeIndex(nextIndex);
+      storageWrite(indexLookup, nextIndexRaw);
+      this.keys.push(key);
+      this.values.push(value);
+      return null;
+    }
+  }
+
+  remove(key) {
+    let indexLookup = this.keyIndexPrefix + JSON.stringify(key);
+    let indexRaw = storageRead(indexLookup);
+
+    if (indexRaw) {
+      if (this.len() == 1) {
+        // If there is only one element then swap remove simply removes it without
+        // swapping with the last element.
+        storageRemove(indexLookup);
+      } else {
+        // If there is more than one element then swap remove swaps it with the last
+        // element.
+        let lastKey = this.keys.get(this.len() - 1);
+
+        if (!lastKey) {
+          throw new Error(ERR_INCONSISTENT_STATE);
+        }
+
+        storageRemove(indexLookup); // If the removed element was the last element from keys, then we don't need to
+        // reinsert the lookup back.
+
+        if (lastKey != key) {
+          let lastLookupKey = this.keyIndexPrefix + JSON.stringify(lastKey);
+          storageWrite(lastLookupKey, indexRaw);
+        }
+      }
+
+      let index = this.deserializeIndex(indexRaw);
+      this.keys.swapRemove(index);
+      return this.values.swapRemove(index);
+    }
+
+    return null;
+  }
+
+  clear() {
+    for (let key of this.keys) {
+      let indexLookup = this.keyIndexPrefix + JSON.stringify(key);
+      storageRemove(indexLookup);
+    }
+
+    this.keys.clear();
+    this.values.clear();
+  }
+
+  toArray() {
+    let ret = [];
+
+    for (let v of this) {
+      ret.push(v);
+    }
+
+    return ret;
+  }
+
+  [Symbol.iterator]() {
+    return new UnorderedMapIterator(this);
+  }
+
+  extend(kvs) {
+    for (let [k, v] of kvs) {
+      this.set(k, v);
+    }
+  }
+
+  serialize() {
+    return JSON.stringify(this);
+  } // converting plain object to class object
+
+
+  static deserialize(data) {
+    let map = new UnorderedMap(data.prefix); // reconstruct UnorderedMap
+
+    map.length = data.length; // reconstruct keys Vector
+
+    map.keys = new Vector(data.prefix + "k");
+    map.keys.length = data.keys.length; // reconstruct values Vector
+
+    map.values = new Vector(data.prefix + "v");
+    map.values.length = data.values.length;
+    return map;
+  }
+
+}
+
+class UnorderedMapIterator {
+  constructor(unorderedMap) {
+    this.keys = new VectorIterator(unorderedMap.keys);
+    this.values = new VectorIterator(unorderedMap.values);
+  }
+
+  next() {
+    let key = this.keys.next();
+    let value = this.values.next();
+
+    if (key.done != value.done) {
+      throw new Error(ERR_INCONSISTENT_STATE);
+    }
+
+    return {
+      value: [key.value, value.value],
+      done: key.done
+    };
+  }
+
+}
+
 var _class, _class2;
 
 let ZkContract = NearBindgen(_class = (_class2 = class ZkContract extends NearContract {
@@ -308,7 +513,7 @@ let ZkContract = NearBindgen(_class = (_class2 = class ZkContract extends NearCo
   }
 
   default() {
-    this.applications = new Vector('unique-id-vector1');
+    this.mobileToUser = new UnorderedMap('unique-id-map1');
     return new ZkContract();
   }
 
@@ -398,10 +603,31 @@ let ZkContract = NearBindgen(_class = (_class2 = class ZkContract extends NearCo
     return [name, mobile, status + ""];
   }
 
-}, (_applyDecoratedDescriptor(_class2.prototype, "createTree", [view], Object.getOwnPropertyDescriptor(_class2.prototype, "createTree"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "createWitness", [view], Object.getOwnPropertyDescriptor(_class2.prototype, "createWitness"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "getProof", [view], Object.getOwnPropertyDescriptor(_class2.prototype, "getProof"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "verifyProofAndUpdate", [view], Object.getOwnPropertyDescriptor(_class2.prototype, "verifyProofAndUpdate"), _class2.prototype)), _class2)) || _class;
+  uploadData(args) {
+    this.mobileToUser.set(args['mobile'], {
+      name: args['name'],
+      status: args['status']
+    });
+    return args;
+  }
+
+}, (_applyDecoratedDescriptor(_class2.prototype, "createTree", [view], Object.getOwnPropertyDescriptor(_class2.prototype, "createTree"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "createWitness", [view], Object.getOwnPropertyDescriptor(_class2.prototype, "createWitness"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "getProof", [view], Object.getOwnPropertyDescriptor(_class2.prototype, "getProof"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "verifyProofAndUpdate", [view], Object.getOwnPropertyDescriptor(_class2.prototype, "verifyProofAndUpdate"), _class2.prototype), _applyDecoratedDescriptor(_class2.prototype, "uploadData", [call], Object.getOwnPropertyDescriptor(_class2.prototype, "uploadData"), _class2.prototype)), _class2)) || _class;
 
 function init() {
   ZkContract._init();
+}
+function uploadData() {
+  let _contract = ZkContract._get();
+
+  _contract.deserialize();
+
+  let args = _contract.constructor.deserializeArgs();
+
+  let ret = _contract.uploadData(args);
+
+  _contract.serialize();
+
+  if (ret !== undefined) env.value_return(_contract.constructor.serializeReturn(ret));
 }
 function verifyProofAndUpdate() {
   let _contract = ZkContract._get();
@@ -444,5 +670,5 @@ function createTree() {
   if (ret !== undefined) env.value_return(_contract.constructor.serializeReturn(ret));
 }
 
-export { createTree, createWitness, getProof, init, verifyProofAndUpdate };
+export { createTree, createWitness, getProof, init, uploadData, verifyProofAndUpdate };
 //# sourceMappingURL=contract.js.map

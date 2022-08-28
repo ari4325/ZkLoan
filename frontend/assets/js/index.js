@@ -1,5 +1,4 @@
-import 'regenerator-runtime/runtime'
-import { initContract, login, logout, getProof, verifyProofAndUpdate, createWitness } from './near/utils'
+import { initContract, login, logout, getProof, verifyProofAndUpdate, createWitness, uploadData } from './near/utils'
 
 // On submit, get the greeting and send it to the contract
 document.querySelector('form').onsubmit = async (event) => {
@@ -18,7 +17,12 @@ document.querySelector('form').onsubmit = async (event) => {
     await getProof([age.value, ann_inc.value, cibil.value], [18, 600000, 750]).then(async (proof) => {
         await verifyProofAndUpdate(proof, name.value, phn_num.value).then((response) => {
             console.log(response);
-            document.getElementById('msg').innerText = "Name: "+response[0]+"\n"+"Phone: " + response[1] + "\nEligible? " + response[2];
+
+            const msg = document.getElementById('msg');
+            msg.innerHTML = '<div>Name: '+response[0]+"\n"+'Phone: ' + response[1] + "\nEligible? " + response[2]+'</div> <button class="link" style="float: right" id="upload"> Store </button>';
+            document.getElementById('upload').addEventListener("click", async () => {
+              await uploadData(response[0], response[1], response[2]).then(console.log);
+            })
         });
     });
   } catch (e) {

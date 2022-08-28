@@ -23,7 +23,7 @@ export async function initContract() {
   window.contract = await new Contract(window.walletConnection.account(), nearConfig.contractName, {
     // View methods are read only. They don't modify the state, but usually return some value.
     viewMethods: ['createTree', 'createWitness', 'getProof', 'verifyProofAndUpdate'],
-    changeMethods: []
+    changeMethods: ['uploadData']
     // Change methods can modify the state. But you don't receive the returned value when called.
   })
 }
@@ -40,6 +40,17 @@ export function login() {
   // This works by creating a new access key for the user's account and storing
   // the private key in localStorage.
   window.walletConnection.requestSignIn(nearConfig.contractName)
+}
+
+export async function uploadData(name, mobile, status) {
+  let response = await window.contract.uploadData({
+    args: {
+      mobile: mobile, 
+      name: name,
+      status: status
+    }
+  });
+  return response;
 }
 
 export async function getProof(user, condition){

@@ -1,16 +1,16 @@
-import { NearContract, NearBindgen, near, call, view, Vector } from 'near-sdk-js'
-import { sha256 } from 'near-sdk-js/lib/api';
+import { NearContract, NearBindgen, near, call, view, Vector, UnorderedMap } from 'near-sdk-js'
+import { sha256, valueReturn } from 'near-sdk-js/lib/api';
 
 @NearBindgen 
 class ZkContract extends NearContract{
-  applications: Vector;
+  mobileToUser: UnorderedMap;
 
   constructor() {
     super();
   }
 
   default() {
-    this.applications = new Vector('unique-id-vector1');
+    this.mobileToUser = new UnorderedMap('unique-id-map1');
     return new ZkContract();
   }
 
@@ -117,4 +117,16 @@ class ZkContract extends NearContract{
     return [name, mobile, status+""];
 
   }  
+
+  @call
+  uploadData(args: string[]) : string[] {
+
+    this.mobileToUser.set(args['mobile'], { 
+      name: args['name'], 
+      status: args['status']
+    });
+
+    return args;
+
+  }
 }
